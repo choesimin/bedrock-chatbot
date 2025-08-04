@@ -1,0 +1,168 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Serverless Chatbot API using Amazon Bedrock in Seoul Region
+
+Globals:
+  Function:
+    Timeout: 60
+    MemorySize: 512
+    Runtime: python3.13
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+    Description: Environment name for resource naming
+
+Resources:
+  # Lambda 함수
+  ChatbotFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'bedrock-chatbot-${Environment}'
+      CodeUri: .
+      Handler: lambda_function.lambda_handler
+      Description: !Sub 'Bedrock ChatBot API for ${Environment} environment'
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          MAX_TOKENS: '2000'
+          TEMPERATURE: '0.7'
+          DYNAMODB_TABLE: !Ref ConversationTable
+          LOG_LEVEL: INFO
+      Policies:
+        - AmazonBedrockFullAccess
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ConversationTable
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: !Sub 'arn:aws:logs:ap-northeast-2:${AWS::AccountId}:*'
+      Events:
+        ChatApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ChatbotApi
+            Path: /chat
+            Method: post
+        ChatApiOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ChatbotApi
+            Path: /chat
+            Method: options
+        HealthCheck:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ChatbotApi
+            Path: /health
+            Method: get
+
+  # API Gateway
+  ChatbotApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub 'bedrock-chatbot-api-${Environment}'
+      StageName: !Ref Environment
+      Description: !Sub 'Bedrock ChatBot API Gateway for ${Environment}'
+      Cors:
+        AllowMethods: "'GET,POST,OPTIONS'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Requested-With'"
+        AllowOrigin: "'*'"
+        MaxAge: "'86400'"
+      GatewayResponses:
+        DEFAULT_4XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+              Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Requested-With'"
+        DEFAULT_5XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+              Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Requested-With'"
+
+  # DynamoDB 테이블 (대화 기록 저장용)
+  ConversationTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'bedrock-chatbot-conversations-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: session_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: session_id
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: BedrockChatbot
+
+  # CloudWatch Log Group
+  ChatbotLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/bedrock-chatbot-${Environment}'
+      RetentionInDays: 14
+
+  # CloudWatch Alarm for Lambda errors
+  LambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'bedrock-chatbot-${Environment}-errors'
+      AlarmDescription: 'Lambda function error rate alarm'
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ChatbotFunction
+
+Outputs:
+  ChatbotApiEndpoint:
+    Description: "API Gateway endpoint URL for Chatbot API"
+    Value: !Sub "https://${ChatbotApi}.execute-api.ap-northeast-2.amazonaws.com/${Environment}/chat"
+    Export:
+      Name: !Sub "${AWS::StackName}-ApiEndpoint"
+  
+  HealthCheckEndpoint:
+    Description: "Health check endpoint URL"
+    Value: !Sub "https://${ChatbotApi}.execute-api.ap-northeast-2.amazonaws.com/${Environment}/health"
+    Export:
+      Name: !Sub "${AWS::StackName}-HealthEndpoint"
+  
+  ChatbotFunctionArn:
+    Description: "Lambda Function ARN"
+    Value: !GetAtt ChatbotFunction.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-FunctionArn"
+  
+  DynamoDBTable:
+    Description: "DynamoDB Table Name for conversation storage"
+    Value: !Ref ConversationTable
+    Export:
+      Name: !Sub "${AWS::StackName}-TableName"
+      
+  ApiId:
+    Description: "API Gateway ID"
+    Value: !Ref ChatbotApi
+    Export:
+      Name: !Sub "${AWS::StackName}-ApiId"
