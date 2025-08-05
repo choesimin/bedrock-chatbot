@@ -62,6 +62,12 @@ Resources:
             RestApiId: !Ref ChatbotApi
             Path: /health
             Method: post
+        HealthCheckGet:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ChatbotApi
+            Path: /health
+            Method: get
 
   # API Gateway
   ChatbotApi:

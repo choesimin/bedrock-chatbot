@@ -22,7 +22,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         headers = {
             'Content-Type': 'application/json; charset=utf-8',
             'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'POST, OPTIONS',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
             'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
         }
         
@@ -35,13 +35,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             }
         
         # HTTP 메서드 확인
-        if event.get('httpMethod') != 'POST':
+        if event.get('httpMethod') not in ['GET', 'POST']:
             return {
                 'statusCode': 405,
                 'headers': headers,
                 'body': json.dumps({
-                    'error': 'Method not allowed. Use POST method.',
-                    'allowed_methods': ['POST', 'OPTIONS']
+                    'error': 'Method not allowed. Use GET or POST method.',
+                    'allowed_methods': ['GET', 'POST', 'OPTIONS']
                 }, ensure_ascii=False)
             }
         
