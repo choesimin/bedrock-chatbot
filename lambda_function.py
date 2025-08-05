@@ -45,9 +45,25 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 }, ensure_ascii=False)
             }
         
+        # Health check 엔드포인트 처리
+        path = event.get('path', '')
+        if path == '/health':
+            return {
+                'statusCode': 200,
+                'headers': headers,
+                'body': json.dumps({
+                    'status': 'healthy',
+                    'region': 'ap-northeast-2',
+                    'timestamp': int(time.time())
+                }, ensure_ascii=False)
+            }
+        
         # 요청 본문 파싱
         try:
-            body = json.loads(event.get('body', '{}'))
+            body_str = event.get('body', '{}')
+            if body_str is None:
+                body_str = '{}'
+            body = json.loads(body_str)
         except json.JSONDecodeError:
             return {
                 'statusCode': 400,
